@@ -29,24 +29,24 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import discord4j.core.event.domain.lifecycle.DisconnectEvent;
 import lombok.extern.log4j.Log4j2;
-import net.bdavies.core.CorePlugin;
-import net.bdavies.core.Ignore;
-import net.bdavies.db.DB;
-import net.bdavies.http.WebServer;
 import net.bdavies.api.IApplication;
 import net.bdavies.api.command.ICommandDispatcher;
 import net.bdavies.api.config.IConfig;
 import net.bdavies.api.discord.IDiscordFacade;
 import net.bdavies.api.plugins.IPluginContainer;
 import net.bdavies.api.variables.IVariableContainer;
-import net.bdavies.plugins.importing.ImportPluginFactory;
-import net.bdavies.variables.VariableContainer;
-import net.bdavies.variables.VariableModule;
 import net.bdavies.command.CommandDispatcher;
 import net.bdavies.command.CommandModule;
 import net.bdavies.config.ConfigModule;
+import net.bdavies.core.CorePlugin;
+import net.bdavies.db.DatabaseManager;
+import net.bdavies.db.DatabaseModule;
 import net.bdavies.discord.DiscordModule;
+import net.bdavies.http.WebServer;
 import net.bdavies.plugins.PluginModule;
+import net.bdavies.plugins.importing.ImportPluginFactory;
+import net.bdavies.variables.VariableContainer;
+import net.bdavies.variables.VariableModule;
 
 import java.io.File;
 import java.io.IOException;
@@ -58,7 +58,8 @@ import java.util.concurrent.Executors;
 /**
  * Main Application Class for BabbleBot where all the services and providers get executed.
  * <p>
- * When developing plugins be sure to extend this app and override loadPlugins and include your plugin for testing.
+ * When developing plugins be sure to extend this app and override loadPlugins and include your plugin for
+ * testing.
  * Please see github wiki for more information.
  * </p>
  *
@@ -67,18 +68,19 @@ import java.util.concurrent.Executors;
  */
 
 @Log4j2
-public class Application implements IApplication {
+public final class Application implements IApplication
+{
 
-    private static int triedToMake = 0;
+    private static int triedToMake;
     private final Injector applicationInjector;
     private final IConfig config;
     private final ICommandDispatcher commandDispatcher;
     private final IVariableContainer variableContainer;
     private final IPluginContainer pluginContainer;
-    private String serverVersion;
     private final WebServer webServer;
     private final Class<?> mainClass;
     private final String[] args;
+    private String serverVersion;
 
     /**
      * Create a {@link Application} for BabbleBot
@@ -86,18 +88,35 @@ public class Application implements IApplication {
      * @param args      this is the arguments passed in the by the cli.
      * @param mainClass - this is the class where the main method is
      */
-    private Application(String[] args, Class<?> mainClass) {
+    private Application(String[] args, Class<?> mainClass)
+    {
         this.mainClass = mainClass;
-        this.args = args;
+        this.args = Arrays.copyOf(args, args.length);
         log.info("Started Application");
         log.info("Args: " + Arrays.toString(args));
-        try {
+        Timer timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask()
+        {
+            @Override
+            public void run()
+            {
+                log.info("Active Threads: " + Thread.activeCount());
+            }
+        }, 1000, 1000 * 60 * 60);
+
+        try
+        {
             serverVersion = new String(getClass().getResourceAsStream("/version.txt").readAllBytes()).trim();
-        } catch (IOException e) {
-            e.printStackTrace();
+        }
+        catch (IOException e)
+        {
+            log.error("Could not find version file please run :createProperties", e);
         }
         ApplicationModule applicationModule = new ApplicationModule(this);
-        ConfigModule configModule = new ConfigModule("config.json"); //TODO: use commandLine Arguments to fulfill this. e.g. -bconf.configLocation=config.json
+        ConfigModule configModule = new ConfigModule(
+                "config.json");
+        //use commandLine Arguments to fulfill this. e.g. -bconf
+        // .configLocation=config.json
         CommandModule commandModule = new CommandModule();
         VariableModule variableModule = new VariableModule();
         PluginModule pluginModule = new PluginModule(this);
@@ -108,20 +127,23 @@ public class Application implements IApplication {
         pluginContainer = pluginModule.getPluginContainer();
 
         config = configModule.getConfig();
-        DB.install(config.getDatabaseConfig());
-        log.info(Ignore.all());
 
         //Important Order Needs Config!!...
         DiscordModule discordModule = new DiscordModule(this);
 
 
-        applicationInjector = Guice.createInjector(applicationModule, configModule, discordModule, commandModule,
+        applicationInjector = Guice.createInjector(applicationModule, configModule,
+                new DatabaseModule(config.getDatabaseConfig(), this), discordModule,
+                commandModule,
                 variableModule, pluginModule);
 
-        pluginContainer.addPlugin("net/bdavies/core", get(CorePlugin.class));
 
-        config.getPlugins().forEach(pluginConfig -> ImportPluginFactory.importPlugin(pluginConfig, this)
-                .subscribe(pluginContainer::addPlugin));
+
+        pluginContainer.addPlugin("core", get(CorePlugin.class));
+
+        config.getPlugins().forEach(pluginConfig ->
+                ImportPluginFactory.importPlugin(pluginConfig, this)
+                        .subscribe(pluginContainer::addPlugin));
 
         discordModule.startDiscordBot();
 
@@ -137,7 +159,8 @@ public class Application implements IApplication {
      * @return {@link IApplication}
      * @throws RuntimeException if the application tried to made twice
      */
-    public static IApplication make(Class<?> mainClass, String[] args) {
+    public static IApplication make(Class<?> mainClass, String[] args)
+    {
         return make(mainClass, Application.class, args);
     }
 
@@ -150,17 +173,31 @@ public class Application implements IApplication {
      * @return {@link IApplication}
      * @throws RuntimeException if the application tried to made twice
      */
-    public static <T extends Application> IApplication make(Class<?> mainClass, Class<T> clazz, String[] args) {
-        if (triedToMake == 0) {
+    public static <T extends Application> IApplication make(Class<?> mainClass, Class<T> clazz, String[] args)
+    {
+        if (triedToMake == 0)
+        {
             triedToMake++;
-            try {
+            try
+            {
                 return clazz.getDeclaredConstructor(String[].class, Class.class).newInstance(args, mainClass);
-            } catch (NoSuchMethodException | IllegalAccessException | InstantiationException | InvocationTargetException e) {
-                log.error("Tried to bootstrap an application without having String[] args in the constructor or having a private constructor, Exiting....", e);
+            }
+            catch (NoSuchMethodException |
+                    IllegalAccessException |
+                    InstantiationException |
+                    InvocationTargetException e)
+            {
+                log.error(
+                        "Tried to bootstrap an application without having String[] args in the constructor " +
+                                "or having a " +
+                                "private constructor, Exiting....",
+                        e);
                 System.exit(-1);
             }
-        } else {
-            log.error("Tried to create Multiple applications, Exiting...", new RuntimeException("Tried to make multiple Applications"));
+        } else
+        {
+            log.error("Tried to create Multiple applications, Exiting...",
+                    new RuntimeException("Tried to make multiple Applications"));
             System.exit(-1);
             return null;
         }
@@ -169,12 +206,14 @@ public class Application implements IApplication {
     }
 
     /**
-     * This will return of a instance of a class and inject any dependencies that are inside the dependency injector.
+     * This will return of a instance of a class and inject any dependencies that are inside the dependency
+     * injector.
      *
      * @param clazz - this is the class to create
-     * @return Object<T> this is an object of type T
+     * @return Object this is an object of type T
      */
-    public <T> T get(Class<T> clazz) {
+    public <T> T get(Class<T> clazz)
+    {
         return applicationInjector.getInstance(clazz);
     }
 
@@ -183,7 +222,8 @@ public class Application implements IApplication {
      *
      * @return {@link IConfig}
      */
-    public IConfig getConfig() {
+    public IConfig getConfig()
+    {
         return this.config;
     }
 
@@ -193,7 +233,8 @@ public class Application implements IApplication {
      * @return {@link CommandDispatcher}
      */
     @Override
-    public ICommandDispatcher getCommandDispatcher() {
+    public ICommandDispatcher getCommandDispatcher()
+    {
         return commandDispatcher;
     }
 
@@ -203,22 +244,26 @@ public class Application implements IApplication {
      * @return {@link VariableContainer}
      */
     @Override
-    public IVariableContainer getVariableContainer() {
+    public IVariableContainer getVariableContainer()
+    {
         return variableContainer;
     }
 
     @Override
-    public IPluginContainer getPluginContainer() {
+    public IPluginContainer getPluginContainer()
+    {
         return pluginContainer;
     }
 
     @Override
-    public String getServerVersion() {
+    public String getServerVersion()
+    {
         return serverVersion;
     }
 
     @Override
-    public void shutdown(int timeout) {
+    public void shutdown(int timeout)
+    {
         Executors.newSingleThreadExecutor().submit(() -> {
             Timer timer = new Timer();
 
@@ -226,11 +271,12 @@ public class Application implements IApplication {
             IDiscordFacade facade = get(IDiscordFacade.class);
             facade.logoutBot().block();
             webServer.stop();
-
-            Runtime.getRuntime().runFinalization();
-            timer.schedule(new TimerTask() {
+            get(DatabaseManager.class).shutdown();
+            timer.schedule(new TimerTask()
+            {
                 @Override
-                public void run() {
+                public void run()
+                {
                     System.exit(0);
                 }
             }, timeout);
@@ -238,28 +284,32 @@ public class Application implements IApplication {
     }
 
     @Override
-    public boolean hasArgument(String argument) {
+    public boolean hasArgument(String argument)
+    {
         return Arrays.asList(args).contains(argument);
     }
 
     @Override
-    public void restart() {
+    public void restart()
+    {
         Executors.newSingleThreadExecutor().submit(() -> {
             getPluginContainer().shutDownPlugins();
             IDiscordFacade facade = get(IDiscordFacade.class);
-            facade.registerEventHandler(DisconnectEvent.class, (d) -> {
-                log.info("Bot has been logged out!!!");
-            });
+            facade.registerEventHandler(DisconnectEvent.class, d -> log.info("Bot has been logged out!!!"));
             facade.logoutBot().block();
             webServer.stop();
-            Runtime.getRuntime().runFinalization();
-            try {
+            get(DatabaseManager.class).shutdown();
+            try
+            {
                 List<String> command = new ArrayList<>();
 
-                if (new File("Babblebot").exists()) {
+                if (new File("Babblebot").exists())
+                {
                     command.add("./Babblebot");
-                } else {
-                    String cmd = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
+                } else
+                {
+                    String cmd = System.getProperty("java.home") + File.separator + "bin" + File.separator +
+                            "java";
                     command.add(cmd);
                     command.addAll(ManagementFactory.getRuntimeMXBean().getInputArguments());
                     command.add("-cp");
@@ -277,9 +327,10 @@ public class Application implements IApplication {
                 Process p = pb.start();
                 p.waitFor();
                 System.exit(p.exitValue());
-                //System.exit(0);
-            } catch (IOException | InterruptedException e) {
-                e.printStackTrace();
+            }
+            catch (IOException | InterruptedException e) /* NOSONAR */
+            {
+                log.error("An error occurred when trying to restart Babblebot", e);
             }
         });
     }

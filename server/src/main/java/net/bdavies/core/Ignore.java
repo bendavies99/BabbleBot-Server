@@ -25,48 +25,45 @@
 
 package net.bdavies.core;
 
-import lombok.Getter;
+import discord4j.core.object.entity.Guild;
+import discord4j.core.object.entity.User;
+import discord4j.core.object.entity.channel.TextChannel;
+import lombok.AccessLevel;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.Setter;
-import net.bdavies.db.Model;
-import net.bdavies.db.fields.IntField;
-import net.bdavies.db.fields.PrimaryField;
-import net.bdavies.db.fields.StringField;
-import net.bdavies.db.fields.Unique;
+import lombok.extern.slf4j.Slf4j;
+import net.bdavies.db.model.ITimestamps;
+import net.bdavies.db.model.Model;
+import net.bdavies.db.model.fields.PrimaryField;
+import net.bdavies.db.model.fields.Property;
+import net.bdavies.db.model.serialization.UseSerializationObject;
+import net.bdavies.db.model.serialization.util.GuildSerializationObject;
+import net.bdavies.db.model.serialization.util.TextChannelSerializationObject;
+import net.bdavies.db.model.serialization.util.UserSerializationObject;
+import org.checkerframework.common.aliasing.qual.Unique;
 
 /**
  * @author ben.davies99@outlook.com (Ben Davies)
  * @since 1.0.0
  */
-public class Ignore extends Model {
-
-    @IntField
+@EqualsAndHashCode(callSuper = false)
+@Data
+@Slf4j
+public class Ignore extends Model implements ITimestamps
+{
+    @Property
     @PrimaryField
-    @Getter
+    @Setter(AccessLevel.PRIVATE)
     private int id;
-
-    @StringField(charLimit = 255)
-    @Getter
-    @Setter
-    private String guildId;
-
-    @StringField(charLimit = 255)
+    @Property
+    @UseSerializationObject(GuildSerializationObject.class)
+    private Guild guild;
+    @Property
     @Unique
-    @Getter
-    @Setter
-    private String channelId;
-
-    @StringField(charLimit = 255)
-    @Getter
-    @Setter
-    private String ignoredBy;
-
-    @Override
-    public String toString() {
-        return "Ignore{" +
-                "id=" + id +
-                ", guildId='" + guildId + '\'' +
-                ", channelId='" + channelId + '\'' +
-                ", ignoredBy='" + ignoredBy + '\'' +
-                '}';
-    }
+    @UseSerializationObject(TextChannelSerializationObject.class)
+    private TextChannel channel;
+    @Property
+    @UseSerializationObject(UserSerializationObject.class)
+    private User ignoredBy;
 }
